@@ -658,6 +658,7 @@ function viewSettings(){
   </div>
   <div class="panel" style="padding:18px 20px;max-width:640px;display:flex;flex-direction:column;gap:10px"><div class="block-head"><h2>학생 앱 주소</h2></div><div class="kv"><b class="num">${esc(appUrl())}</b><button class="btn small" data-act="copy" data-text="${esc(appUrl())}">복사</button></div><div class="note">학생 로그인은 학생 화면의 '학생 앱' 탭에서 만들어요.</div></div>
   <div class="panel" style="padding:18px 20px;max-width:640px;display:flex;flex-direction:column;gap:10px"><div class="block-head"><h2>파일 저장 공간</h2></div>${usageHtml()}<div class="note">숙제에 붙인 파일과 학생이 낸 사진이 여기에 저장돼요. 사진은 올릴 때 자동으로 줄여서 저장하고, 숙제를 지우면 붙인 파일도 같이 지워져요.</div></div>
+  <div class="panel" style="padding:18px 20px;max-width:640px;display:flex;flex-direction:column;gap:10px"><div class="block-head"><h2>기록 가져오기</h2></div><div class="note">예전 앱(Claude 아티팩트)에서 꺼낸 기록 파일(수업노트_기록.json)을 골라 이 앱으로 옮겨요. 같은 파일을 두 번 넣어도 기록이 두 번 생기지 않아요.</div><div><button class="btn" data-act="import">기록 파일 고르기</button><input type="file" id="imp-file" accept=".json,application/json" hidden></div></div>
   <div class="panel" style="padding:18px 20px;max-width:640px;display:flex;flex-direction:column;gap:10px"><div class="block-head"><h2>계정</h2></div><div class="note">${esc((S.user&&S.user.email)||'')} 계정으로 로그인했어요.</div><div><button class="btn" data-act="logout">로그아웃</button></div></div>`;
 }
 
@@ -1017,6 +1018,7 @@ document.addEventListener('click',async e=>{
     case 'go':S.view=b.dataset.view;render();window.scrollTo(0,0);break;
     case 'login':signInWithPopup(auth,new GoogleAuthProvider()).catch(err=>{if(!/popup-closed|cancelled-popup/.test(err.code||''))gateLogin(authMsg(err))});break;
     case 'logout':await signOut(auth);break;
+    case 'import':$('#imp-file').click();break;
     case 'copy':try{await navigator.clipboard.writeText(b.dataset.text||'');toast('복사했어요')}catch(err){toast('복사하지 못했어요. 글자를 길게 눌러 직접 복사해 주세요')}break;
     case 'file-open':openFile({id,name:b.dataset.name});break;
     case 'acct-new':acctForm(stu(id));break;
@@ -1075,7 +1077,33 @@ async function removeItem(col,id){
   if(col==='homework'){const h=S.homework.find(x=>x.id===id);for(const f of [...((h&&h.files)||[]),...((h&&h.submitted)||[])]){try{await fileDel(f.id)}catch(e){}}}
   await del(col,id);closeModal();toast(col==='events'?'일정을 지웠어요':'삭제했어요');
 }
+/* Import records exported from the old artifact app. Documents keep their original ids, so importing twice overwrites instead of duplicating. */
+const IMP_COLS=['students','lessons','homework','words','tests','events','settings'];
+const IMP_NAMES={students:'학생',lessons:'수업 기록',homework:'숙제',words:'단어장',tests:'단어시험 결과',events:'예약·시험 일정',settings:'설정'};
+async function importFile(file){
+  let pack;
+  try{pack=JSON.parse(await file.text())}catch(e){toast('기록 파일을 읽지 못했어요. 수업노트_기록.json 파일이 맞는지 확인해 주세요');return}
+  const data=pack&&pack.app==='suup-note-export'&&pack.data;
+  if(!data){toast('수업노트 기록 파일이 아니에요');return}
+  const has=(sid)=>['lessons','homework','words','tests','events'].some(c=>S[c].some(x=>x.studentId===sid));
+  const incoming=Object.entries(data.students||{});
+  /* A student added here by hand with the same name, with no records and no student login, is replaced by the imported one. */
+  const dupes=S.students.filter(s=>!(data.students||{})[s.id]&&incoming.some(([,v])=>v.name===s.name)&&!has(s.id)&&!s.loginUid);
+  const counts=IMP_COLS.map(c=>[c,Object.keys(data[c]||{}).length]).filter(([,n])=>n);
+  openModal('기록 가져오기',`
+    <p style="margin:0">이 기록을 옮길게요.</p>
+    <div class="panel rows">${counts.map(([c,n])=>`<div class="kv" style="padding:10px 14px"><span>${IMP_NAMES[c]}</span><b class="num">${n}개</b></div>`).join('')}</div>
+    <p class="note" style="margin:0">학생: ${esc(incoming.map(([,v])=>v.name).join(', '))}</p>
+    ${dupes.length?`<p class="note" style="margin:0">여기서 시험으로 추가한 ${esc(dupes.map(s=>s.name).join(', '))}(기록 없음)은 지우고, 옮겨 오는 학생으로 바꿀게요.</p>`:''}
+  `,async()=>{
+    let n=0;
+    for(const c of IMP_COLS)for(const [id,v] of Object.entries(data[c]||{})){await setDoc(doc(fs,c,id),v);n++}
+    for(const s of dupes){try{await del('students',s.id)}catch(e){}}
+    toast(`기록 ${n}개를 옮겼어요`);S.view='students';render();
+  },'옮기기');
+}
 document.addEventListener('change',async e=>{
+  if(e.target.id==='imp-file'){const f=e.target.files[0];e.target.value='';if(f)importFile(f);return}
   if(e.target.id==='cal-filter'){S.calSid=e.target.value;render();return}
   if(e.target.id==='memo'){try{await patch('students',e.target.dataset.id,{memo:e.target.value});toast('메모를 저장했어요')}catch(err){toast(errMsg(err))}}
 });
