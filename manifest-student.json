@@ -1,0 +1,24 @@
+{
+  "name": "영어 공부",
+  "short_name": "영어",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1E6A53",
+  "theme_color": "#1E6A53",
+  "icons": [
+    {
+      "src": "icon-student-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-student-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "id": "student"
+}
