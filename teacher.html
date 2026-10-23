@@ -38,7 +38,7 @@
   --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}
 
 *{box-sizing:border-box}
-html,body{height:100%}
+html,body{height:100%;overflow-x:clip}
 body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--f-body);-webkit-font-smoothing:antialiased}
 button,input,textarea,select{font:inherit;color:inherit}
 a{color:var(--accent)}
@@ -277,8 +277,9 @@ legend{font-size:13px;font-weight:600;padding:0 6px}
   .app{grid-template-columns:1fr}
   .rail{position:sticky;top:env(safe-area-inset-top,0px);height:auto;flex-direction:row;align-items:center;justify-content:space-between;padding:10px 16px;border-right:none;border-bottom:1px solid var(--line);z-index:10;gap:10px}
   .brand{padding:0;font-size:17px}.brand small{display:none}
-  .nav{flex-direction:row}
-  .nav button{padding:6px 10px;font-size:14px}
+  .nav{flex-direction:row;overflow-x:auto;min-width:0;scrollbar-width:none}
+  .rail{min-width:0}.brand{flex:none}
+  .nav button{padding:6px 10px;font-size:14px;flex:none}
   .rail .quick-wrap{display:none}
   main{padding-block:22px 56px}
   .stats{gap:8px}.stat{padding:10px 12px}.stat b{font-size:21px}
@@ -301,7 +302,7 @@ button.file{cursor:pointer;font:inherit;font-size:12.5px}
 .fv img{border-radius:8px;border:1px solid var(--line)}
 /* word test table on phones */
 th{white-space:nowrap}
-td.d{white-space:nowrap}
+td.d,td.num{white-space:nowrap}
 @media (max-width:600px){th,td{padding:9px 10px}.score-bar{display:none}.tbl-wrap td .chip{margin-top:2px}}
 /* appeals */
 .ap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:12px 16px;align-items:center}
