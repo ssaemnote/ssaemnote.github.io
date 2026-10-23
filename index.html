@@ -130,6 +130,17 @@ p{margin:0}
 .wrong{display:flex;flex-direction:column;gap:2px}
 .wrong .a{font-size:15px;color:var(--danger)}
 
+/* appeal + live test */
+.appeal{align-self:flex-start;margin-top:6px}
+.wrong .st{font-size:14px;font-weight:600;margin-top:4px}
+.live{z-index:35}
+.live .test-top{background:var(--accent);color:var(--accent-ink);border-bottom-color:var(--accent)}
+.live .test-top .btn{background:transparent;color:var(--accent-ink);border-color:rgba(255,255,255,.5)}
+.timer{height:10px;background:var(--surface-2);border-radius:5px;overflow:hidden}
+.timer i{display:block;height:100%;background:var(--mark);width:100%}
+.timer.low i{background:var(--danger)}
+.tleft{font-family:var(--f-num);font-size:15px;color:var(--muted);text-align:right}
+.done-list>div{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-size:15px;z-index:40;max-width:calc(100% - 32px);text-align:center}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -137,6 +148,7 @@ p{margin:0}
 <div id="app"><div class="login"><div class="card"><h1>수업 노트</h1><p class="lab">불러오는 중…</p></div></div></div>
 <div class="overlay" id="modal" hidden></div>
 <div class="test" id="test" hidden></div>
+<div class="test live" id="live" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <input type="file" id="pick" accept="image/*" multiple hidden>
 
@@ -159,7 +171,7 @@ const fbApp=initializeApp(firebaseConfig,'student');
 const auth=getAuth(fbApp);
 const fs=initializeFirestore(fbApp,{ignoreUndefinedProperties:true});
 
-const S={user:null,sid:null,portal:null,events:[],homework:[],words:[],tests:[],loaded:new Set(),phase:'boot'};
+const S={user:null,sid:null,portal:null,events:[],homework:[],words:[],tests:[],live:[],loaded:new Set(),phase:'boot'};
 const LISTS=['events','homework','words','tests'];
 
 /* ---------- helpers ---------- */
@@ -231,8 +243,8 @@ async function upPhoto(blob,name){
 let unsubs=[];
 function stopAll(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
 onAuthStateChanged(auth,async user=>{
-  stopAll();Object.assign(S,{user,sid:null,portal:null,events:[],homework:[],words:[],tests:[],loaded:new Set()});
-  closeModal();T=null;renderTest();
+  stopAll();Object.assign(S,{user,sid:null,portal:null,events:[],homework:[],words:[],tests:[],live:[],loaded:new Set()});
+  closeModal();T=null;renderTest();L=null;renderLive();
   if(!user){S.phase='login';render();return}
   S.phase='loading';render();
   try{
@@ -243,9 +255,11 @@ onAuthStateChanged(auth,async user=>{
   S.phase='home';
   const fail=e=>{S.phase='error';S.err=errMsg(e);render()};
   unsubs.push(onSnapshot(doc(fs,'portal',S.sid),d=>{S.portal=d.exists()?d.data():{};S.loaded.add('portal');render()},fail));
-  LISTS.forEach(c=>unsubs.push(onSnapshot(query(collection(fs,c),where('studentId','==',S.sid)),snap=>{S[c]=snap.docs.map(d=>({id:d.id,...d.data()}));S.loaded.add(c);render()},fail)));
+  LISTS.forEach(c=>unsubs.push(onSnapshot(query(collection(fs,c),where('studentId','==',S.sid)),snap=>{S[c]=snap.docs.map(d=>({id:d.id,...d.data()}));S.loaded.add(c);render();if(c==='tests'&&T&&T.phase==='result')renderTest()},fail)));
+  /* Live tests started by the teacher. Errors are ignored so the rest of the app keeps working. */
+  unsubs.push(onSnapshot(query(collection(fs,'liveTests'),where('studentId','==',S.sid)),snap=>{S.live=snap.docs.map(d=>({id:d.id,...d.data()}));liveSync()},()=>{}));
 });
-setInterval(()=>{if(S.phase==='home'&&$('#modal').hidden&&!T)render()},30000);
+setInterval(()=>{if(S.phase==='home'&&$('#modal').hidden&&!T&&!L)render()},30000);
 
 /* ---------- screens ---------- */
 function render(){
@@ -332,7 +346,7 @@ function homeHtml(){
   const fbHtml=fbList.length?`<section class="sec"><h2>선생님 확인</h2><div class="card rowlist">${fbList.map(h=>{const r=RES[h.result||'full']||RES.full;return `<div><div class="hw-meta"><span class="chip ${r[1]}">${r[0]}</span><span>${fmtD(h.checkedDate)}</span></div><div style="font-weight:600">${esc(h.title)}</div>${h.feedback?`<div class="hw-desc">💬 ${esc(h.feedback)}</div>`:''}</div>`}).join('')}</div></section>`:'';
 
   const sets=S.words.filter(w=>(w.items||[]).length).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  const wHtml=sets.length?`<section class="sec"><h2>단어 연습</h2><div class="card rowlist">${sets.map(w=>{const tt=S.tests.filter(x=>x.setId===w.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));return `<div class="wset"><div style="min-width:0"><h3>${esc(w.title)}</h3><div class="sub">단어 ${w.items.length}개${tt.length?` · 최근 <span class="num">${tt[0].score}/${tt[0].total}</span>`:''}</div></div><button class="btn primary small" data-act="test-start" data-id="${w.id}">연습하기</button></div>`}).join('')}</div></section>`:'';
+  const wHtml=sets.length?`<section class="sec"><h2>단어 연습</h2><div class="card rowlist">${sets.map(w=>{const tt=S.tests.filter(x=>x.setId===w.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));return `<div class="wset"><div style="min-width:0"><h3>${esc(w.title)}</h3><div class="sub">단어 ${w.items.length}개${tt.length?` · 최근 <span class="num">${tt[0].score}/${tt[0].total}</span>`:''}${tt.some(x=>(x.appeals||[]).some(a=>a.status==='wait'))?' · <span class="chip mark">선생님 확인 중</span>':''}</div></div><button class="btn primary small" data-act="test-start" data-id="${w.id}">연습하기</button></div>`}).join('')}</div></section>`:'';
 
   return `<div class="page">${head}${examHtml}${nextHtml}${hwHtml}${fbHtml}${wHtml}<div class="foot"><span>${esc(p.name||'')}</span><button class="btn ghost small" data-act="logout">로그아웃</button></div></div>`;
 }
@@ -405,12 +419,26 @@ function renderTest(){
   }else{
     const score=T.res.filter(r=>r.ok).length,n=T.res.length,wrong=T.res.filter(r=>!r.ok);
     inner=`<div class="card"><div class="lab">${esc(T.set.title)}</div><div class="score num">${score}<small>/ ${n}개 맞았어요</small></div>
-      ${wrong.length?`<div class="lab">틀린 단어</div><div class="rowlist">${wrong.map(r=>`<div class="wrong"><div><b>${esc(r.w)}</b> · ${esc(r.m)}</div><div class="a">내 답: ${esc(r.ans||'(빈칸)')}</div></div>`).join('')}</div>`:'<p style="font-size:20px">모두 맞혔어요! 🎉</p>'}
+      ${wrong.length?`<div class="lab">틀린 단어</div><div class="rowlist">${wrong.map((r,i)=>`<div class="wrong"><div><b>${esc(r.w)}</b> · ${esc(r.m)}</div><div class="a">내 답: ${esc(r.ans||'(빈칸)')}</div>${appealHtml(r,i)}</div>`).join('')}</div>${wrong.some(r=>norm(r.ans))?`<p style="font-size:14px;color:var(--muted)">내 답도 맞는 것 같으면 '제 답도 맞아요'를 눌러요. 선생님이 확인해 줄 거예요.</p>`:''}`:'<p style="font-size:20px">모두 맞혔어요! 🎉</p>'}
       <p class="lab" style="font-weight:500">${T.saved?'결과가 선생님께 전달됐어요.':'결과를 저장하는 중…'}</p>
       <div class="btns">${wrong.length?'<button class="btn primary" data-act="t-wrong">틀린 것만 다시</button>':''}<button class="btn" data-act="t-again">처음부터 다시</button></div></div>`;
   }
   el.innerHTML=`<div class="test-top"><span class="t">단어 연습 · ${esc(T.set.title)}</span><button class="btn small" data-act="t-close">${T.phase==='run'?'그만하기':'닫기'}</button></div><div class="test-body"><div class="test-inner">${inner}</div></div>`;
   const a=$('#t-ans');if(a)setTimeout(()=>a.focus(),30);
+}
+/* "My answer is right too" — asks the teacher to check one wrong answer. */
+const myTest=()=>T&&T.testId?S.tests.find(x=>x.id===T.testId):null;
+function appealOf(r){const t=myTest();return t?(t.appeals||[]).find(a=>a.w===r.w&&a.m===r.m&&a.ans===r.ans):null}
+function appealHtml(r,i){
+  if(!norm(r.ans))return '';
+  const a=appealOf(r);
+  if(a)return a.status==='ok'?'<div class="st" style="color:var(--ok)">✓ 선생님이 맞다고 했어요</div>':a.status==='no'?'<div class="st" style="color:var(--muted)">선생님이 이번엔 틀린 답이래요</div>':'<div class="st" style="color:var(--muted)">선생님께 물어봤어요. 기다려 주세요</div>';
+  return `<button class="btn small appeal" data-act="t-appeal" data-i="${i}" ${T.saved&&T.testId?'':'disabled'}>🙋 제 답도 맞아요</button>`;
+}
+async function sendAppeal(i){
+  const r=T.res.filter(x=>!x.ok)[i];const t=myTest();if(!r||!t||appealOf(r))return;
+  await updateDoc(doc(fs,'tests',t.id),{appeals:[...(t.appeals||[]),{w:r.w,m:r.m,ans:r.ans,status:'wait',at:Date.now()}]});
+  toast('선생님께 물어봤어요');
 }
 function begin(items,retry){T.items=shuffle(items);T.retry=!!retry;T.i=0;T.answers=[];T.phase='run';renderTest()}
 async function answer(ans){
@@ -420,10 +448,75 @@ async function answer(ans){
   T.phase='result';T.saved=false;renderTest();
   const cur=T;
   try{
-    await setDoc(doc(collection(fs,'tests')),{studentId:S.sid,setId:cur.set.id,setTitle:cur.set.title+(cur.retry?' (틀린 것 다시)':''),date:todayStr(),dir:cur.dir,total:cur.res.length,score:cur.res.filter(r=>r.ok).length,wrong:cur.res.filter(r=>!r.ok).map(({w,m,ans})=>({w,m,ans})),by:'student',createdAt:Date.now()});
+    const ref=doc(collection(fs,'tests'));cur.testId=ref.id;
+    await setDoc(ref,{studentId:S.sid,setId:cur.set.id,setTitle:cur.set.title+(cur.retry?' (틀린 것 다시)':''),date:todayStr(),dir:cur.dir,total:cur.res.length,score:cur.res.filter(r=>r.ok).length,wrong:cur.res.filter(r=>!r.ok).map(({w,m,ans})=>({w,m,ans})),by:'student',createdAt:Date.now()});
     cur.saved=true;if(T===cur)renderTest();
   }catch(e){toast(errMsg(e))}
 }
+
+/* ---------- live test (teacher starts it during class) ---------- */
+let L=null;            // {id, local:{idx:answer}, qAt, dismissed}
+const DISMISS='live-dismissed';
+function dismissed(){try{return JSON.parse(localStorage.getItem(DISMISS)||'[]')}catch(e){return[]}}
+function setDismissed(id){try{const a=dismissed().concat(id).slice(-30);localStorage.setItem(DISMISS,JSON.stringify(a))}catch(e){}}
+const liveDoc=()=>L?S.live.find(x=>x.id===L.id):null;
+function liveSync(){
+  if(L){const d=liveDoc();if(!d||d.status==='cancel'){L=null;renderLive();toast('선생님이 시험을 멈췄어요');render();return}renderLive();return}
+  const run=S.live.filter(x=>x.status==='run'&&!dismissed().includes(x.id)).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))[0];
+  if(run){
+    T=null;renderTest();closeModal();
+    L={id:run.id,local:{},qAt:0,qi:-1};
+    if(!run.seen)updateDoc(doc(fs,'liveTests',run.id),{seen:Date.now()}).catch(()=>{});
+    renderLive();
+  }
+}
+const answered=(d,i)=>(d.answers&&d.answers[i]!=null)||L.local[i]!=null;
+function liveIdx(d){for(let i=0;i<(d.prompts||[]).length;i++)if(!answered(d,i))return i;return -1}
+let liveTimer=null,liveKey='';
+function renderLive(){
+  const el=$('#live');const d=liveDoc();
+  if(!L||!d){el.hidden=true;el.innerHTML='';liveKey='';clearInterval(liveTimer);return}
+  el.hidden=false;
+  const n=(d.prompts||[]).length;const i=d.status==='run'?liveIdx(d):-2;
+  const key=d.status+'|'+i+'|'+(d.status==='done'?d.score:'');
+  if(key===liveKey)return;               // nothing new to show — keep what the student is typing
+  liveKey=key;clearInterval(liveTimer);
+  let inner='';
+  if(d.status==='done'){
+    const res=d.result||[];
+    inner=`<div class="card"><div class="lab">${esc(d.setTitle||'')}</div><div class="score num">${d.score??0}<small>/ ${d.total??n}개 맞았어요</small></div>
+      <div class="rowlist done-list">${(d.prompts||[]).map((p,k)=>`<div><span>${esc(p)}</span><span class="chip ${res[k]?'ok':'bad'}">${res[k]?'맞음':'틀림'}</span></div>`).join('')}</div>
+      <button class="btn primary big" data-act="l-close">닫기</button></div>`;
+  }else if(i===-1){
+    inner=`<div class="card" style="text-align:center"><p style="font-size:44px">✍️</p><h2>다 풀었어요!</h2><p style="color:var(--muted)">선생님이 채점하고 있어요. 잠깐 기다려 주세요.</p></div>`;
+  }else{
+    L.qi=i;L.qAt=Date.now();
+    inner=`<div class="progress" aria-hidden="true"><i style="width:${i/n*100}%"></i></div>
+      <div class="card"><div class="qcount">${i+1} / ${n}</div>
+      ${d.limit?`<div class="timer" id="l-timer"><i></i></div><div class="tleft num" id="l-left">${d.limit}초</div>`:''}
+      <div class="prompt">${esc(d.prompts[i])}</div>
+      <input class="qinput" id="l-ans" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="${d.dir==='m2w'?'영어 단어':'뜻'}를 쓰세요" aria-label="답">
+      <button class="btn primary big" data-act="l-next">${i+1<n?'다음':'다 했어요'}</button></div>`;
+    if(d.limit)liveTimer=setInterval(()=>{
+      const left=d.limit*1000-(Date.now()-L.qAt);const bar=$('#l-timer i'),txt=$('#l-left');
+      if(bar)bar.style.width=Math.max(0,left/(d.limit*10))+'%';
+      if(txt)txt.textContent=Math.max(0,Math.ceil(left/1000))+'초';
+      if(left<=3000)$('#l-timer')?.classList.add('low');
+      if(left<=0){clearInterval(liveTimer);liveSubmit()}
+    },200);
+  }
+  el.innerHTML=`<div class="test-top"><span class="t">선생님 시험 · ${esc(d.setTitle||'')}</span>${d.status==='done'?'<button class="btn small" data-act="l-close">닫기</button>':''}</div><div class="test-body"><div class="test-inner">${inner}</div></div>`;
+  const a=$('#l-ans');if(a)setTimeout(()=>a.focus(),30);
+}
+function liveSubmit(){
+  const d=liveDoc();if(!d||d.status!=='run')return;
+  const i=L.qi;if(i<0||answered(d,i))return;
+  const a=($('#l-ans')||{}).value||'';
+  L.local[i]=a;
+  updateDoc(doc(fs,'liveTests',d.id),{['answers.'+i]:{a,at:Date.now()}}).catch(e=>{delete L.local[i];liveKey='';renderLive();toast(errMsg(e))});
+  renderLive();
+}
+function liveClose(){if(L)setDismissed(L.id);L=null;renderLive();render()}
 
 /* ---------- events ---------- */
 document.addEventListener('submit',async e=>{
@@ -455,10 +548,14 @@ document.addEventListener('click',async e=>{
     case 't-wrong':begin(T.res.filter(r=>!r.ok).map(({w,m})=>({w,m})),true);break;
     case 't-again':begin(T.set.items);break;
     case 't-close':T=null;renderTest();render();break;
+    case 't-appeal':b.disabled=true;await sendAppeal(+b.dataset.i);renderTest();break;
+    case 'l-next':liveSubmit();break;
+    case 'l-close':liveClose();break;
   }}catch(err){toast(errMsg(err))}
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.id==='t-ans'&&!e.isComposing){e.preventDefault();answer(e.target.value)}
+  if(e.key==='Enter'&&e.target.id==='l-ans'&&!e.isComposing){e.preventDefault();liveSubmit()}
   if(e.key==='Escape'&&!$('#modal').hidden)closeModal();
 });
 </script>

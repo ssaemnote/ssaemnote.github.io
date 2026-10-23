@@ -299,6 +299,27 @@ button.file{cursor:pointer;font:inherit;font-size:12.5px}
 .kv b{font-weight:500;overflow-wrap:anywhere}
 .fv{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
 .fv img{border-radius:8px;border:1px solid var(--line)}
+/* word test table on phones */
+th{white-space:nowrap}
+td.d{white-space:nowrap}
+@media (max-width:600px){th,td{padding:9px 10px}.score-bar{display:none}.tbl-wrap td .chip{margin-top:2px}}
+/* appeals */
+.ap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:12px 16px;align-items:center}
+.ap .a{font-size:14px;color:var(--danger)}
+@media (max-width:600px){.ap{grid-template-columns:1fr}}
+/* live test */
+.live{z-index:31}
+.live .test-top{background:var(--accent);color:var(--accent-ink)}
+.live .test-top .btn{background:transparent;color:var(--accent-ink);border-color:rgba(255,255,255,.5)}
+.lrow{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;padding:12px 16px;align-items:center}
+.lrow .n{font-family:var(--f-num);color:var(--muted)}
+.lrow .q{font-size:13px;color:var(--muted)}
+.lrow .ans{font-size:18px;font-weight:600;overflow-wrap:anywhere}
+.lrow .ans.wait{color:var(--muted);font-weight:400;font-size:15px}
+.lrow .ans.bad{color:var(--danger)}
+.lrow .ans.ok{color:var(--ok)}
+.livebar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:14px}
+.field select.sel{border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:9px 11px}
 </style>
 
 </head><body>
@@ -313,6 +334,7 @@ button.file{cursor:pointer;font:inherit;font-size:12.5px}
 </div>
 <div class="overlay" id="modal" hidden></div>
 <div class="test" id="test" hidden></div>
+<div class="test live" id="live" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script type="module">
@@ -334,7 +356,7 @@ const fbApp=initializeApp(firebaseConfig);
 const auth=getAuth(fbApp);
 const fs=initializeFirestore(fbApp,{ignoreUndefinedProperties:true});
 
-const S={students:[],events:[],lessons:[],homework:[],words:[],tests:[],portal:[],settings:{},view:'home',sid:null,tab:'lessons',loaded:new Set(),dbOk:null,user:null};
+const S={students:[],events:[],lessons:[],homework:[],words:[],tests:[],portal:[],live:[],settings:{},view:'home',sid:null,tab:'lessons',loaded:new Set(),dbOk:null,user:null};
 const COLS=['students','lessons','homework','words','tests','events'];
 
 /* ---------- helpers ---------- */
@@ -441,7 +463,7 @@ function stopAll(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
 function gate(html){const g=$('#gate');if(html==null){g.hidden=true;return}g.hidden=false;$('#gate-body').innerHTML=html}
 const gateLogin=msg=>gate(`${msg?`<div class="banner">${esc(msg)}</div>`:''}<p>선생님 구글 계정으로 로그인해 주세요.</p><button class="btn primary" data-act="login" style="font-size:16px;padding:12px 18px">Google 계정으로 로그인</button><p class="note">학생은 이 화면이 아니라 학생 앱 주소로 들어가요.</p>`);
 onAuthStateChanged(auth,user=>{
-  stopAll();S.user=user;S.loaded=new Set();COLS.forEach(c=>S[c]=[]);S.portal=[];S.settings={};
+  stopAll();S.user=user;S.loaded=new Set();COLS.forEach(c=>S[c]=[]);S.portal=[];S.live=[];S.settings={};
   if(!user){gateLogin();return}
   gate(null);S.dbOk=true;let denied=false;
   const fail=e=>{
@@ -452,6 +474,7 @@ onAuthStateChanged(auth,user=>{
   COLS.forEach(c=>unsubs.push(onSnapshot(collection(fs,c),snap=>{S[c]=snap.docs.map(d=>({id:d.id,...d.data()}));S.loaded.add(c);render();syncPortals()},e=>{S.loaded.add(c);fail(e)})));
   unsubs.push(onSnapshot(doc(fs,'settings','main'),d=>{S.settings=d.exists()?d.data():{};S.loaded.add('settings');render();syncPortals()},fail));
   unsubs.push(onSnapshot(collection(fs,'portal'),snap=>{S.portal=snap.docs.map(d=>({id:d.id,...d.data()}));S.loaded.add('portal');syncPortals()},fail));
+  unsubs.push(onSnapshot(collection(fs,'liveTests'),snap=>{S.live=snap.docs.map(d=>({id:d.id,...d.data()}));render();if(LV&&LV.id)renderLive()},()=>{}));
   render();
 });
 
@@ -597,15 +620,18 @@ function viewHome(){
   const T=S.tests.filter(x=>x.date===t).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
   const X=examsOf().filter(e=>e.date===t);
   const SUB=S.homework.filter(h=>!h.done&&h.due!==t&&(h.submitted||[]).length).sort((a,b)=>(a.submittedAt||0)-(b.submittedAt||0));
+  const AP=pendingAppeals();const LIVE=S.live.filter(x=>x.status==='run');
   const rRows=R.map(e=>{const s=stu(e.studentId);return `<div class="sched"><div class="when"><b class="num">${esc(e.time||'시간 미정')}</b><span class="chip mark">기록 전</span></div><div style="min-width:0"><div class="hw-sub">${who(s)}</div>${e.plan?`<div class="hw-title">${esc(e.plan)}</div>`:''}${e.note?`<div class="lnote">${esc(e.note)}</div>`:''}</div><div class="row-tools">${roomBtns(s,'btn small')}<button class="btn primary small" data-act="resv-done" data-id="${e.id}">수업 기록</button><button class="btn ghost small" data-act="resv-edit" data-id="${e.id}">변경</button></div></div>`});
   const lRows=L.map(l=>{const s=stu(l.studentId);return `<div class="sched"><div class="when"><b>${lessonNo(l)}회차</b><span class="chip ok">기록 완료</span></div><div style="min-width:0"><div class="hw-sub">${who(s)}</div><div class="lprog">${esc(l.progress||'진도 기록 없음')}</div>${l.notes?`<div class="lnote">${esc(l.notes)}</div>`:''}${lessonLinks(l)}</div><div class="row-tools"><button class="btn ghost small" data-act="lesson-edit" data-id="${l.id}">수정</button></div></div>`});
-  const sub=[`수업 ${R.length+L.length}개`,R.length?`기록할 수업 ${R.length}개`:'',H.length?`마감 숙제 ${H.length}개`:'',SUB.length?`학생이 낸 숙제 ${SUB.length}개`:'',X.length?`시험 ${X.length}개`:''].filter(Boolean).join(' · ');
+  const sub=[`수업 ${R.length+L.length}개`,R.length?`기록할 수업 ${R.length}개`:'',H.length?`마감 숙제 ${H.length}개`:'',SUB.length?`학생이 낸 숙제 ${SUB.length}개`:'',AP.length?`단어 확인 요청 ${AP.length}개`:'',X.length?`시험 ${X.length}개`:''].filter(Boolean).join(' · ');
   return head(sub)
+  +(LIVE.length?`<section class="block"><div class="block-head"><h2>진행 중인 실시간 시험</h2></div><div class="panel rows">${LIVE.map(x=>`<div class="sched"><div class="when"><b class="num">${Object.keys(x.answers||{}).length}/${(x.prompts||[]).length}</b><span>답함</span></div><div style="min-width:0"><div class="hw-sub">${who(stu(x.studentId))}</div><div class="hw-title">${esc(x.setTitle||'')}</div></div><div class="row-tools"><button class="btn primary small" data-act="live-open" data-id="${x.id}">열기</button></div></div>`).join('')}</div></section>`:'')
+  +(AP.length?`<section class="block"><div class="block-head"><h2>단어 확인 요청</h2><span class="hint">학생이 '제 답도 맞아요'를 눌렀어요</span></div><div class="panel rows">${AP.map(x=>appealRow(x,true)).join('')}</div></section>`:'')
   +(X.length?`<section class="block"><div class="block-head"><h2>오늘 시험</h2></div><div class="panel rows">${X.map(e=>schedRow(e,true)).join('')}</div></section>`:'')
   +`<section class="block"><div class="block-head"><h2>오늘 수업</h2>${R.length?`<span class="hint">수업이 끝나면 '수업 기록'을 눌러 주세요</span>`:''}</div><div class="panel rows">${rRows.concat(lRows).join('')||`<div class="empty"><span>오늘 예약된 수업이 없어요.</span><div class="actions"><button class="btn small" data-act="resv-new" data-date="${t}">수업 예약</button><button class="btn small primary" data-act="lesson-new">수업 기록하기</button></div></div>`}</div></section>`
   +(SUB.length?`<section class="block"><div class="block-head"><h2>학생이 낸 숙제</h2><span class="hint">사진을 보고 체크 칸을 눌러 결과를 남겨요</span></div><div class="panel rows">${SUB.map(h=>hwRow(h,true)).join('')}</div></section>`:'')
   +(H.length?`<section class="block"><div class="block-head"><h2>오늘 마감 숙제</h2><span class="hint">체크 칸을 눌러 결과를 남겨요</span></div><div class="panel rows">${H.map(h=>hwRow(h,true)).join('')}</div></section>`:'')
-  +(T.length?`<section class="block"><div class="block-head"><h2>오늘 본 단어시험</h2></div><div class="panel rows">${T.map(x=>`<div class="sched"><div class="when"><b class="num">${x.score}/${x.total}</b></div><div style="min-width:0"><div class="hw-sub">${who(stu(x.studentId))}</div><div class="hw-title">${esc(x.setTitle||'')}${x.by==='student'?' <span class="chip ok">혼자 연습</span>':''}</div>${(x.wrong||[]).length?`<div class="lnote">틀린 단어: ${esc(x.wrong.map(w=>w.w).join(', '))}</div>`:''}</div></div>`).join('')}</div></section>`:'');
+  +(T.length?`<section class="block"><div class="block-head"><h2>오늘 본 단어시험</h2></div><div class="panel rows">${T.map(x=>`<div class="sched"><div class="when"><b class="num">${x.score}/${x.total}</b></div><div style="min-width:0"><div class="hw-sub">${who(stu(x.studentId))}</div><div class="hw-title">${esc(x.setTitle||'')}${testChip(x)}</div>${(x.wrong||[]).length?`<div class="lnote">틀린 단어: ${esc(x.wrong.map(w=>w.w).join(', '))}</div>`:''}</div></div>`).join('')}</div></section>`:'');
 }
 
 function viewStudents(){
@@ -635,9 +661,9 @@ function viewStudent(){
     <div class="panel rows">${hws.length?hws.map(h=>hwRow(h,false)).join(''):'<div class="empty"><strong>낸 숙제가 없어요</strong><span>숙제를 내면서 학습지 PDF나 사진을 함께 붙일 수 있어요.</span></div>'}</div>`;
   }else if(S.tab==='words'){
     body=`<div class="block-head"><h2>단어장</h2><button class="btn primary small" data-act="words-new" data-id="${s.id}">단어장 만들기</button></div>
-    <div class="panel rows">${ws.length?ws.map(w=>`<div class="wset"><div style="min-width:0"><h3>${esc(w.title)} <span class="chip">${(w.items||[]).length}개</span></h3><div class="preview">${esc((w.items||[]).slice(0,6).map(i=>i.w).join(', '))}</div>${(()=>{const tt=S.tests.filter(t=>t.setId===w.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));return `<div class="wstat">${tt.length?`최근 <span class="num">${tt[0].score}/${tt[0].total}</span> · ${fmtD(tt[0].date)} · 지금까지 ${tt.length}번 봄`:'아직 시험을 보지 않았어요'}</div>`})()}</div><div class="actions"><button class="btn primary small" data-act="test-start" data-id="${w.id}">시험 보기</button><button class="btn ghost small" data-act="words-edit" data-id="${w.id}">수정</button><button class="btn ghost small danger" data-act="del" data-col="words" data-id="${w.id}">삭제</button></div></div>`).join(''):'<div class="empty"><strong>단어장을 만들어 보세요</strong><span>엑셀이나 메모에 있는 단어 목록을 그대로 붙여넣으면 돼요.</span></div>'}</div>
+    <div class="panel rows">${ws.length?ws.map(w=>`<div class="wset"><div style="min-width:0"><h3>${esc(w.title)} <span class="chip">${(w.items||[]).length}개</span></h3><div class="preview">${esc((w.items||[]).slice(0,6).map(i=>i.w).join(', '))}</div>${(()=>{const tt=S.tests.filter(t=>t.setId===w.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));return `<div class="wstat">${tt.length?`최근 <span class="num">${tt[0].score}/${tt[0].total}</span> · ${fmtD(tt[0].date)} · 지금까지 ${tt.length}번 봄`:'아직 시험을 보지 않았어요'}</div>`})()}</div><div class="actions"><button class="btn primary small" data-act="test-start" data-id="${w.id}">시험 보기</button><button class="btn small" data-act="live-new" data-id="${w.id}">실시간 시험</button><button class="btn ghost small" data-act="words-edit" data-id="${w.id}">수정</button><button class="btn ghost small danger" data-act="del" data-col="words" data-id="${w.id}">삭제</button></div></div>`).join(''):'<div class="empty"><strong>단어장을 만들어 보세요</strong><span>엑셀이나 메모에 있는 단어 목록을 그대로 붙여넣으면 돼요.</span></div>'}</div>
     <div class="block-head" style="margin-top:12px"><h2>시험 결과</h2></div>
-    <div class="panel tbl-wrap">${ts.length?`<table><thead><tr><th>날짜</th><th>단어장</th><th class="num">점수</th><th class="num">틀린 단어</th><th></th></tr></thead><tbody>${ts.map(t=>{const p=t.total?Math.round(t.score/t.total*100):0;return `<tr><td class="num" style="text-align:left">${fmtD(t.date)}</td><td>${esc(t.setTitle)}${t.by==='student'?' <span class="chip ok">혼자 연습</span>':''}</td><td class="num"><span class="score-bar"><i style="width:${p}%"></i></span>${t.score}/${t.total}</td><td class="num">${(t.wrong||[]).length?`<button class="btn ghost small" data-act="test-wrong" data-id="${t.id}">${t.wrong.length}개 보기</button>`:'없음'}</td><td class="num"><button class="btn ghost small danger" data-act="del" data-col="tests" data-id="${t.id}">삭제</button></td></tr>`}).join('')}</tbody></table>`:'<div class="empty">아직 본 시험이 없어요</div>'}</div>`;
+    <div class="panel tbl-wrap">${ts.length?`<table><thead><tr><th>날짜</th><th>단어장</th><th class="num">점수</th><th class="num">틀린</th><th></th></tr></thead><tbody>${ts.map(t=>{const p=t.total?Math.round(t.score/t.total*100):0;const w=waitOf(t);return `<tr><td class="num d" style="text-align:left">${fmtS(t.date)}</td><td>${esc(t.setTitle)}${testChip(t)}</td><td class="num"><span class="score-bar"><i style="width:${p}%"></i></span>${t.score}/${t.total}</td><td class="num">${(t.wrong||[]).length?`<button class="btn ${w?'primary':'ghost'} small" data-act="test-wrong" data-id="${t.id}">${w?`확인 요청 ${w}`:`${t.wrong.length}개 보기`}</button>`:'없음'}</td><td class="num"><button class="btn ghost small danger" data-act="del" data-col="tests" data-id="${t.id}">삭제</button></td></tr>`}).join('')}</tbody></table>`:'<div class="empty">아직 본 시험이 없어요</div>'}</div>`;
   }else if(S.tab==='calendar'){
     body=calendarHtml(s.id);
   }else if(S.tab==='app'){
@@ -1012,6 +1038,99 @@ function testAnswer(ans){
   T.phase='result';T.saved=false;renderTest();
 }
 
+/* ---------- "my answer is right too" requests from the student app ---------- */
+const fmtS=s=>{if(!s)return'';const d=new Date(s+'T00:00');return `${d.getMonth()+1}/${d.getDate()} (${DOW[d.getDay()]})`};
+const testChip=t=>t.by==='student'?' <span class="chip ok">혼자 연습</span>':t.by==='live'?' <span class="chip mark">실시간</span>':'';
+const waitOf=t=>(t.appeals||[]).filter(a=>a.status==='wait').length;
+const pendingAppeals=()=>S.tests.flatMap(t=>(t.appeals||[]).map((a,k)=>({t,a,k})).filter(x=>x.a.status==='wait')).sort((x,y)=>(x.a.at||0)-(y.a.at||0));
+function appealRow({t,a,k},showStudent){
+  const s=stu(t.studentId);
+  return `<div class="ap"><div style="min-width:0">${showStudent&&s?`<div class="hw-sub">${esc(s.name)} · ${esc(t.setTitle||'')}</div>`:''}<div><b>${esc(a.w)}</b> · ${esc(a.m)}</div><div class="a">학생 답: <b>${esc(a.ans)}</b></div></div><div class="actions"><button type="button" class="btn primary small" data-act="ap-ok" data-id="${t.id}" data-k="${k}">맞아요 (인정)</button><button type="button" class="btn small" data-act="ap-no" data-id="${t.id}" data-k="${k}">아니에요</button></div></div>`;
+}
+async function appealDecide(tid,k,ok){
+  const t=S.tests.find(x=>x.id===tid);const a=t&&(t.appeals||[])[k];if(!a||a.status!=='wait')return;
+  const upd={appeals:t.appeals.map((x,i)=>i===k?{...x,status:ok?'ok':'no',decidedAt:Date.now()}:x)};
+  if(ok){const wi=(t.wrong||[]).findIndex(r=>r.w===a.w&&r.m===a.m&&r.ans===a.ans);if(wi>=0){upd.wrong=t.wrong.filter((_,i)=>i!==wi);upd.score=Math.min(t.total||0,(t.score||0)+1)}}
+  await patch('tests',tid,upd);closeModal();
+  if(!ok){toast('틀린 답으로 두었어요');return}
+  const set=S.words.find(w=>w.id===t.setId);const item=set&&(set.items||[]).find(x=>x.w===a.w&&x.m===a.m);
+  if(!item||isRight(item,a.ans,t.dir)){toast('정답으로 인정했어요. 점수가 1점 올랐어요');return}
+  offerAdd(set.id,item,a.ans,t.dir);
+}
+function offerAdd(setId,item,ans,dir){
+  const f=dir==='m2w'?'w':'m';const add=String(ans||'').trim();if(!add)return;
+  const after=f==='m'?`<b>${esc(item.w)}</b> · ${esc(item.m)}, <mark>${esc(add)}</mark>`:`<b>${esc(item.w)}, <mark>${esc(add)}</mark></b> · ${esc(item.m)}`;
+  openModal('단어장에도 추가할까요?',`<p style="margin:0">정답으로 인정했어요. 다음 연습부터 <b>${esc(add)}</b>도 정답으로 칠까요?</p><div class="panel" style="padding:12px 14px;display:flex;flex-direction:column;gap:4px"><div class="note">지금: <b>${esc(item.w)}</b> · ${esc(item.m)}</div><div>바뀐 뒤: ${after}</div></div><p class="note" style="margin:0">추가하지 않아도 이번 점수는 이미 올라갔어요.</p>`,async()=>{
+    const s2=S.words.find(w=>w.id===setId);if(!s2)return;
+    await patch('words',setId,{items:s2.items.map(x=>x.w===item.w&&x.m===item.m?{...x,[f]:x[f]+', '+add}:x)});toast('단어장에 추가했어요');
+  },'추가하기');
+}
+
+/* ---------- live test (shows up on the student's app right away) ---------- */
+let LV=null;   // {phase:'setup',set,...} or {id}
+const lvDoc=()=>LV&&LV.id?S.live.find(x=>x.id===LV.id):null;
+const liveAns=(d,k)=>d.answers&&d.answers[k]?d.answers[k]:null;
+const liveOk=(d,k)=>{const m=d.marks&&d.marks[k];if(m!=null)return !!m;const a=liveAns(d,k);return !!a&&isRight(d.items[k],a.a,d.dir)};
+function liveSetup(setId){
+  const set=S.words.find(w=>w.id===setId);if(!set||!(set.items||[]).length)return;
+  const s=stu(set.studentId);if(!s||!s.loginUid){toast('먼저 학생 화면의 \'학생 앱\' 탭에서 로그인을 만들어 주세요');return}
+  LV={phase:'setup',set};renderLive();
+}
+async function liveStart(){
+  const set=LV.set;const dir=(document.querySelector('input[name=ldir]:checked')||{}).value||'m2w';
+  const shuffle=$('#l-shuffle').checked;const limit=+($('#l-limit').value||0);
+  let items=set.items.map(({w,m})=>({w,m}));
+  if(shuffle)for(let i=items.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[items[i],items[j]]=[items[j],items[i]]}
+  for(const x of S.live.filter(x=>x.studentId===set.studentId)){
+    if(x.status==='run')await patch('liveTests',x.id,{status:'cancel'});
+    else if((x.createdAt||0)<Date.now()-864e5)await del('liveTests',x.id);   // tidy up old ones
+  }
+  const id=await put('liveTests',{studentId:set.studentId,setId:set.id,setTitle:set.title,dir,limit,items,prompts:items.map(x=>dir==='m2w'?x.m:x.w),status:'run',answers:{},marks:{},by:'teacher',createdAt:Date.now()});
+  LV={id};renderLive();
+}
+async function liveMark(k){const d=lvDoc();if(!d)return;await patch('liveTests',d.id,{['marks.'+k]:!liveOk(d,k)})}
+async function liveFinish(){
+  const d=lvDoc();if(!d)return;
+  const res=d.items.map((_,k)=>liveOk(d,k));const score=res.filter(Boolean).length;
+  await put('tests',{studentId:d.studentId,setId:d.setId,setTitle:d.setTitle,date:todayStr(),dir:d.dir,total:d.items.length,score,wrong:d.items.map((x,k)=>({w:x.w,m:x.m,ans:(liveAns(d,k)||{}).a||''})).filter((_,k)=>!res[k]),by:'live',liveId:d.id,createdAt:Date.now()});
+  await patch('liveTests',d.id,{status:'done',score,total:d.items.length,result:res,endedAt:Date.now()});
+  toast(`${score}/${d.items.length} 저장했어요. 학생 앱에도 점수가 보여요`);
+}
+function renderLive(){
+  const el=$('#live');
+  if(!LV){el.hidden=true;el.innerHTML='';return}
+  let inner='',title='',top='';
+  if(LV.phase==='setup'){
+    const set=LV.set,s=stu(set.studentId);title=set.title;top='<button class="btn small" data-act="live-hide">닫기</button>';
+    inner=`<div class="qcard"><div><div class="eyebrow">${esc(s?s.name:'')} · 단어 ${set.items.length}개</div><h2 class="prompt" style="font-size:clamp(26px,5vw,36px)">${esc(set.title)}</h2></div>
+      <div class="opt-group" role="radiogroup" aria-label="시험 방식">
+        <label class="opt"><input type="radio" name="ldir" value="m2w" checked> 뜻을 보고 단어 쓰기</label>
+        <label class="opt"><input type="radio" name="ldir" value="w2m"> 단어를 보고 뜻 쓰기</label>
+      </div>
+      <label class="opt"><input type="checkbox" id="l-shuffle" checked> 순서 섞기</label>
+      <div class="field"><label for="l-limit">한 문제 시간</label><select class="sel" id="l-limit"><option value="0">제한 없음</option><option value="10">10초</option><option value="15">15초</option><option value="20">20초</option><option value="30">30초</option></select><span class="help">시간이 지나면 쓰던 답 그대로 다음 문제로 넘어가요.</span></div>
+      <p class="note" style="margin:0">'시작'을 누르면 ${esc(s?s.name:'학생')} 학생의 영어 앱에 시험이 바로 떠요. 학생이 답을 쓸 때마다 이 화면에 보여요.</p>
+      <div class="qbtns"><span></span><button class="btn primary" data-act="live-start">시작</button></div></div>`;
+  }else{
+    const d=lvDoc();
+    if(!d){
+      if(LV.had){LV=null;el.hidden=true;el.innerHTML='';return}   // removed elsewhere
+      el.hidden=false;el.innerHTML=`<div class="test-top"><span class="t">실시간 시험</span><button class="btn small" data-act="live-hide">닫기</button></div><div class="test-body"><div class="test-inner"><div class="qcard"><p class="note" style="margin:0">시험을 여는 중…</p></div></div></div>`;return}
+    LV.had=true;
+    const s=stu(d.studentId);const n=d.items.length;const got=d.items.filter((_,k)=>liveAns(d,k)).length;const score=d.items.filter((_,k)=>liveOk(d,k)).length;
+    title=(s?s.name+' · ':'')+d.setTitle;
+    top=d.status==='run'?'<button class="btn small" data-act="live-hide">잠깐 닫기</button>':'<button class="btn small" data-act="live-hide">닫기</button>';
+    const state=d.status==='done'?'<span class="chip ok">끝났어요 · 저장함</span>':d.status==='cancel'?'<span class="chip">멈춘 시험</span>':d.seen?'<span class="chip ok">학생 앱에 시험이 떴어요</span>':'<span class="chip mark">학생이 영어 앱을 열면 시험이 떠요</span>';
+    inner=`<div class="livebar">${state}<span>답함 <b class="num">${got}/${n}</b></span><span>지금 점수 <b class="num">${score}</b></span>${d.limit?`<span class="note">한 문제 ${d.limit}초</span>`:''}</div>
+      <div class="panel rows">${d.items.map((x,k)=>{const a=liveAns(d,k);const ok=liveOk(d,k);const man=d.marks&&d.marks[k]!=null;
+        return `<div class="lrow"><span class="n">${k+1}</span><div style="min-width:0"><div class="q">${esc(d.prompts[k])} → 정답 ${esc(d.dir==='m2w'?x.w:x.m)}</div>${a?`<div class="ans ${ok?'ok':'bad'}">${esc(a.a||'(빈칸)')} ${ok?'✓':'✗'}${man?' <span class="chip">직접 채점</span>':''}</div>`:`<div class="ans wait">${d.status==='run'?'기다리는 중…':'답 없음'}</div>`}</div>${a&&d.status==='run'?`<button class="btn small ${ok?'':'primary'}" data-act="live-mark" data-k="${k}">${ok?'오답으로':'정답 인정'}</button>`:'<span></span>'}</div>`}).join('')}</div>
+      ${d.status==='run'?`<div class="qbtns"><button class="btn ghost danger" data-act="live-cancel">시험 없애기</button><button class="btn primary" data-act="live-finish">끝내고 점수 저장</button></div>`:''}
+      ${d.status==='done'?`<p class="note" style="margin:0">점수가 '단어시험' 탭의 시험 결과에 '실시간'으로 저장됐어요.</p>`:''}`;
+  }
+  el.hidden=false;
+  el.innerHTML=`<div class="test-top"><span class="t">실시간 시험 · ${esc(title)}</span>${top}</div><div class="test-body"><div class="test-inner">${inner}</div></div>`;
+}
+
 /* ---------- events ---------- */
 const armed=new Map();
 document.addEventListener('click',async e=>{
@@ -1056,7 +1175,15 @@ document.addEventListener('click',async e=>{
     case 'close-modal':closeModal();break;
     case 'cycle-reset':{const s=stu(id);await patch('students',id,{cycleStart:cycleInfo(s).total});toast('새 회차를 시작했어요');break}
     case 'room-save':{const z=$('#room-zoom').value.trim(),g=$('#room-gmeet').value.trim();if((z&&!safeUrl(z))||(g&&!safeUrl(g))){toast('링크는 https:// 로 시작해야 해요');break}await put('settings',{...S.settings,zoomLink:z,gmeetLink:g,roomLink:''},'main');toast('저장했어요');break}
-    case 'test-wrong':{const t=S.tests.find(x=>x.id===id);openModal('틀린 단어',`<div class="panel rows">${(t.wrong||[]).map(r=>`<div class="wrong" style="grid-template-columns:1fr"><div><b>${esc(r.w)}</b> · ${esc(r.m)}<div class="a">학생 답: ${esc(r.ans||'(빈칸)')}</div></div></div>`).join('')}</div>`,async()=>{},'확인');break}
+    case 'test-wrong':{const t=S.tests.find(x=>x.id===id);openModal('틀린 단어',`<div class="panel rows">${(t.wrong||[]).map(r=>{const k=(t.appeals||[]).findIndex(a=>a.w===r.w&&a.m===r.m&&a.ans===r.ans);const a=k>=0?t.appeals[k]:null;return a&&a.status==='wait'?appealRow({t,a,k},false):`<div class="wrong" style="grid-template-columns:1fr"><div><b>${esc(r.w)}</b> · ${esc(r.m)}<div class="a">학생 답: ${esc(r.ans||'(빈칸)')}</div>${a&&a.status==='no'?'<div class="note">확인 요청 → 아니에요</div>':''}</div></div>`}).join('')}</div>`,async()=>{},'확인');break}
+    case 'ap-ok':case 'ap-no':b.disabled=true;await appealDecide(id,+b.dataset.k,act==='ap-ok');break;
+    case 'live-new':liveSetup(id);break;
+    case 'live-start':b.disabled=true;await liveStart();break;
+    case 'live-open':LV={id};renderLive();break;
+    case 'live-mark':await liveMark(+b.dataset.k);break;
+    case 'live-finish':{const d=lvDoc();const left=d?(d.prompts||[]).filter((_,k)=>!liveAns(d,k)).length:0;if(left&&!b.dataset.armed){b.dataset.armed='1';b.textContent=`아직 ${left}문제 남았어요. 한 번 더 누르면 끝내요`;break}b.disabled=true;await liveFinish();break}
+    case 'live-cancel':{if(!b.dataset.armed){b.dataset.armed='1';b.textContent='한 번 더 누르면 시험을 없애요';break}await patch('liveTests',LV.id,{status:'cancel'});LV=null;renderLive();toast('시험을 멈췄어요');break}
+    case 'live-hide':LV=null;renderLive();render();break;
     case 'del':{
       const key=b.dataset.col+id;
       if(!armed.has(key)){armed.set(key,1);b.classList.add('armed');const old=b.textContent;b.textContent='한 번 더 누르면 삭제';setTimeout(()=>{armed.delete(key);if(b.isConnected){b.classList.remove('armed');b.textContent=old}},3500);break}
@@ -1077,6 +1204,7 @@ async function removeItem(col,id){
     if(s&&s.loginUid)await dropLogin(s);
     for(const c of ['lessons','homework','words','tests','events'])for(const x of S[c].filter(x=>x.studentId===id))await del(c,x.id);
     try{for(const d of (await getDocs(query(collection(fs,'fileParts'),where('studentId','==',id)))).docs)await deleteDoc(d.ref)}catch(e){}
+    try{for(const x of S.live.filter(x=>x.studentId===id))await del('liveTests',x.id)}catch(e){}
     await del('students',id);closeModal();S.view='students';toast(`${s?s.name:'학생'} 기록을 모두 삭제했어요`);render();return;
   }
   if(col==='homework'){const h=S.homework.find(x=>x.id===id);for(const f of [...((h&&h.files)||[]),...((h&&h.submitted)||[])]){try{await fileDel(f.id)}catch(e){}}}
