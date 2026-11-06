@@ -281,9 +281,23 @@ function loginHtml(){
 }
 const loaded=()=>['portal',...LISTS].every(c=>S.loaded.has(c));
 
+/* Fixed weekly lessons from the teacher (portal.weekly). Days with a reservation, a moved lesson or a day off are left out. */
+function autoLessons(days){
+  const wk=((S.portal&&S.portal.weekly)||[]).filter(p=>p&&p.from).slice().sort((a,b)=>a.from.localeCompare(b.from));
+  if(!wk.length)return [];
+  const busy=new Set();S.events.forEach(e=>{if((e.type==='lesson'||e.type==='skip')&&e.date)busy.add(e.date);if(e.replaces)busy.add(e.replaces)});
+  const out=[];const t=todayStr();
+  for(let i=0;i<days;i++){
+    const d=addDays(t,i);if(busy.has(d))continue;
+    let p=null;for(const x of wk)if(x.from<=d)p=x;if(!p)continue;
+    const wd=new Date(d+'T00:00').getDay();const sl=(p.slots||[]).find(x=>+x.d===wd);
+    if(sl)out.push({type:'lesson',date:d,time:sl.t||'',plan:''});
+  }
+  return out;
+}
 function nextLesson(){
   const now=new Date(),t=todayStr();
-  return S.events.filter(e=>e.type==='lesson').sort(evSort).find(e=>{
+  return [...S.events.filter(e=>e.type==='lesson'),...autoLessons(60)].sort(evSort).find(e=>{
     if(e.date>t)return true;if(e.date<t)return false;
     if(!e.time)return true;
     return now<new Date(e.date+'T'+e.time).getTime()+3*36e5;
@@ -333,13 +347,15 @@ function homeHtml(){
     :`<p class="empty">다음 수업 날짜가 아직 정해지지 않았어요.</p>`}</div></section>`;
 
   const todo=S.homework.filter(h=>!h.done).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999')||(a.createdAt||0)-(b.createdAt||0));
-  const hwHtml=`<section class="sec"><h2>해야 할 숙제 <span class="count">${todo.length}</span></h2>${todo.length?todo.map(h=>{const sent=(h.submitted||[]);return `<article class="card">
+  const hwHtml=`<section class="sec"><h2>해야 할 숙제 <span class="count">${todo.length}</span></h2>${todo.length?todo.map(h=>{const all=(h.submitted||[]);const sent=all.filter(f=>!f.mark);const mk=all.some(f=>f.mark);return `<article class="card">
       <div class="hw-meta">${dueChip(h)}</div>
       <div class="hw-title">${esc(h.title)}</div>
       ${h.desc?`<div class="hw-desc">${esc(h.desc)}</div>`:''}
       ${(h.files||[]).length?`<div><div class="lab" style="margin-bottom:6px">선생님 자료</div>${fileBtns(h.files)}</div>`:''}
+      ${mk?`<div class="sent">✓ 다 했다고 선생님께 알렸어요. <button class="btn ghost small" data-act="mark-undo" data-id="${h.id}">취소</button></div>`:''}
       ${sent.length?`<div class="sent">✓ 사진 ${sent.length}장을 냈어요. 선생님이 확인할 거예요.</div>${fileBtns(sent,h.id)}`:''}
-      <button class="btn ${sent.length?'':'primary'} big" data-act="photo" data-id="${h.id}">📷 ${sent.length?'사진 더 내기':'숙제 사진 내기'}</button>
+      ${mk?'':`<button class="btn ${sent.length?'':'primary'} big" data-act="mark-done" data-id="${h.id}">✅ 다 했어요</button>`}
+      <button class="btn big" data-act="photo" data-id="${h.id}">📷 ${sent.length?'사진 더 내기':'숙제 사진 내기'}</button>
     </article>`}).join(''):`<div class="card"><p class="empty">남은 숙제가 없어요. 잘했어요! 👏</p></div>`}</section>`;
 
   const fbList=S.homework.filter(h=>h.done&&h.checkedDate&&dayDiff(h.checkedDate)>=-14).sort((a,b)=>(b.checkedDate||'').localeCompare(a.checkedDate||'')).slice(0,5);
@@ -540,6 +556,10 @@ document.addEventListener('click',async e=>{
     case 'close':closeModal();break;
     case 'file-open':openFile(id,b.dataset.name,b.dataset.mine);break;
     case 'photo':pickFor=id;$('#pick').click();break;
+    case 'mark-done':case 'mark-undo':{const h=S.homework.find(x=>x.id===id);if(!h)break;b.disabled=true;const rest=(h.submitted||[]).filter(f=>!f.mark);
+      try{if(act==='mark-done'){await updateDoc(doc(fs,'homework',h.id),{submitted:[...rest,{id:'done_'+Date.now(),mark:true,name:'다 했어요',at:Date.now()}],submittedAt:Date.now()});toast('선생님께 다 했다고 알렸어요!')}
+      else{await updateDoc(doc(fs,'homework',h.id),{submitted:rest});toast('취소했어요')}}catch(err){toast(errMsg(err))}
+      render();break}
     case 'photo-del':{if(b.dataset.armed){b.disabled=true;await deletePhoto(id,b.dataset.hw)}else{b.dataset.armed='1';b.textContent='한 번 더 누르면 지워져요'}break}
     case 'test-start':{const set=S.words.find(w=>w.id===id);if(set){T={set,phase:'setup',dir:'m2w'};renderTest()}break}
     case 't-begin':T.dir=(document.querySelector('input[name=dir]:checked')||{}).value||'m2w';begin(T.set.items);break;
