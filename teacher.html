@@ -190,9 +190,9 @@ textarea.memo{width:100%;min-height:220px;border:1px solid var(--line);border-ra
 .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
-.lg-lesson{background:var(--accent-soft);border:1px solid var(--accent)}
+.lg-lesson{background:var(--surface-2);border-left:3px solid var(--muted)}
 .lg-due{border:1px dashed var(--muted)}
-.lg-test{background:var(--mark)}
+.lg-test{background:var(--surface-2)}
 .cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .cal .dow{font-size:12px;font-weight:600;color:var(--muted);padding:8px;text-align:center;border-bottom:1px solid var(--line)}
 .cal .dow.sun{color:var(--danger)}
@@ -210,6 +210,16 @@ textarea.memo{width:100%;min-height:220px;border:1px solid var(--line);border-ra
 .ev.due{border:1px dashed var(--muted);color:var(--muted)}
 .ev.quiz{background:var(--mark);color:var(--mark-ink)}
 .ev.more{color:var(--muted)}
+/* 학생 색 (달력) */
+.ev.sc{--soft:color-mix(in srgb,var(--sc) 20%,var(--surface))}
+.ev.sc.lesson{background:var(--soft);color:var(--ink);border-left:3px solid var(--sc);border-radius:3px}
+.ev.sc.resv{background:var(--surface);border:1.5px solid var(--sc);color:var(--ink)}
+.ev.sc.exam{background:var(--sc);border:none;color:#fff;font-weight:700}
+.ev.sc.quiz{background:var(--soft);color:var(--ink)}
+.ev.sc.due{border:1.5px dashed var(--sc);background:transparent;color:var(--ink)}
+.stu-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--ink);margin-top:8px}
+.stu-legend span{display:inline-flex;align-items:center;gap:6px}
+.stu-legend i{width:12px;height:12px;border-radius:50%;display:inline-block;background:var(--sc)}
 .daylist .item{display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px;padding:12px 16px;align-items:start}
 .daylist .kind{font-size:12px;font-weight:600;color:var(--muted);padding-top:3px}
 .links{display:flex;flex-direction:column;gap:3px;margin-top:8px;font-size:13px}
@@ -217,15 +227,16 @@ textarea.memo{width:100%;min-height:220px;border:1px solid var(--line);border-ra
 .wstat{font-size:12.5px;color:var(--muted)}
 .ev.resv{border:1px solid var(--accent);color:var(--accent);background:var(--surface)}
 .ev.exam{background:var(--danger-soft);color:var(--danger);font-weight:600}
-.lg-resv{border:1px solid var(--accent)}
-.lg-exam{background:var(--danger-soft);border:1px solid var(--danger)}
+.lg-resv{border:1.5px solid var(--muted)}
+.lg-exam{background:var(--muted)}
 .sched{display:grid;grid-template-columns:104px minmax(0,1fr) auto;gap:12px;padding:12px 16px;align-items:start}
 .sched .when{font-family:var(--f-num);font-size:13px;line-height:1.5;color:var(--muted);display:flex;flex-direction:column;align-items:flex-start;gap:3px}
 .sched .when b{font-family:var(--f-body);font-size:14px;color:var(--ink);font-weight:600}
 .sched.past .when b{color:var(--danger)}
 @media (max-width:720px){.sched{grid-template-columns:84px minmax(0,1fr)}.sched .row-tools{grid-column:2}}
 @media (max-width:600px){.ev.resv{border:none;background:var(--accent)}.ev.exam{background:var(--danger)}}
-@media (max-width:600px){.cell{min-height:58px;padding:4px}.ev{font-size:0;padding:0;height:5px;border-radius:2px}.ev .dot{display:none}.ev.due{border:none;background:var(--muted)}.ev.more{display:none}}
+@media (max-width:600px){.cell{min-height:58px;padding:4px}.ev{font-size:0;padding:0;height:5px;border-radius:2px}.ev .dot{display:none}.ev.due{border:none;background:var(--muted)}.ev.more{display:none}
+.ev.sc.lesson,.ev.sc.exam,.ev.sc.quiz{background:var(--sc);border:none}.ev.sc.exam{height:7px}.ev.sc.resv{background:var(--sc);border:none;opacity:.45}.ev.sc.due{background:transparent;border:none;border-top:2px dashed var(--sc);height:0;margin:2px 0}}
 
 /* modal */
 .overlay{position:fixed;inset:0;background:rgba(10,16,13,.45);display:grid;place-items:center;padding:16px;z-index:20}
@@ -828,12 +839,12 @@ function lessonLinks(l){
   return rows.length?`<div class="links">${rows.join('')}</div>`:'';
 }
 function evPill(e,sid){
-  const s=stu(e.o.studentId);const dot=!sid&&s?`<span class="dot" style="--dot:var(--c${s.color||1})"></span>`:'';const nm=!sid&&s?esc(s.name):'';
-  if(e.k==='resv')return `<span class="ev resv">${dot}${e.o.time?esc(e.o.time)+' ':''}${nm||'예약'}</span>`;
-  if(e.k==='exam')return `<span class="ev exam">${dot}${esc(e.o.title||'시험')}</span>`;
-  if(e.k==='lesson')return `<span class="ev lesson">${dot}${nm||lessonNo(e.o)+'회차'}</span>`;
-  if(e.k==='test')return `<span class="ev quiz">${dot}단어 ${e.o.score}/${e.o.total}</span>`;
-  return `<span class="ev due">${dot}숙제 마감${e.o.done?' ✓':''}</span>`;
+  const s=stu(e.o.studentId);const sc=s?` sc" style="--sc:var(--c${s.color||1})`:'';const nm=!sid&&s?esc(s.name):'';
+  if(e.k==='resv')return `<span class="ev resv${sc}">${e.o.time?esc(e.o.time)+' ':''}${nm||'예약'}</span>`;
+  if(e.k==='exam')return `<span class="ev exam${sc}">${nm?nm+' ':''}${esc(e.o.title||'시험')}</span>`;
+  if(e.k==='lesson')return `<span class="ev lesson${sc}">${nm||lessonNo(e.o)+'회차'}</span>`;
+  if(e.k==='test')return `<span class="ev quiz${sc}">${nm?nm+' ':''}단어 ${e.o.score}/${e.o.total}</span>`;
+  return `<span class="ev due${sc}">${nm?nm+' ':''}숙제${e.o.done?' ✓':''}</span>`;
 }
 const dItem=(k,body)=>`<div class="item"><span class="kind">${k}</span><div style="min-width:0">${body}</div></div>`;
 function dayDetail(sid){
@@ -872,7 +883,7 @@ function calendarHtml(sid){
   }
   const filter=S.view==='student'?'':`<select class="cal-filter" id="cal-filter" aria-label="학생 선택"><option value="">모든 학생</option>${studentOptions(S.calSid)}</select>`;
   return `<div class="cal-head"><div class="cal-nav"><button class="icon-btn" data-act="cal-move" data-n="-1" aria-label="이전 달">‹</button><h2>${y}년 ${m}월</h2><button class="icon-btn" data-act="cal-move" data-n="1" aria-label="다음 달">›</button><button class="btn small" data-act="cal-today">오늘</button></div>${filter}</div>
-  <div class="legend"><span><i class="lg-lesson"></i>한 수업</span><span><i class="lg-resv"></i>예약 수업</span><span><i class="lg-exam"></i>시험</span><span><i class="lg-test"></i>단어시험 점수</span><span><i class="lg-due"></i>숙제 마감</span><span>날짜를 누르면 그날 기록이 아래에 보여요</span></div>
+  <div class="legend"><span><i class="lg-lesson"></i>한 수업</span><span><i class="lg-resv"></i>예약 수업</span><span><i class="lg-exam"></i>시험</span><span><i class="lg-test"></i>단어시험 점수</span><span><i class="lg-due"></i>숙제 마감</span><span>날짜를 누르면 그날 기록이 아래에 보여요</span></div>${sid?'':`<div class="stu-legend">${[...S.students].sort(byName).map(s=>`<span style="--sc:var(--c${s.color||1})"><i></i>${esc(s.name)}</span>`).join('')}</div>`}
   <div class="cal">${cells}</div>${dayDetail(sid)}`;
 }
 function viewCalendar(){
