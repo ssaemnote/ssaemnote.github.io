@@ -573,7 +573,13 @@ async function openFile(f){
   try{
     const blob=await fileGet(f.id);const url=URL.createObjectURL(blob);const box=$('#fv');if(!box)return;
     const img=/^image\//.test(blob.type);
-    box.innerHTML=(img?`<img src="${url}" alt="${esc(f.name)}">`:'')+`<a class="btn ${img?'':'primary'}" href="${url}" download="${esc(f.name)}" target="_blank" rel="noopener">${img?'사진 저장':'파일 열기 · 저장'}</a>`;
+    const pdf=/pdf/i.test(blob.type);
+    box.innerHTML=(img?`<img src="${url}" alt="${esc(f.name)}">`:'')+`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a class="btn ${img?'':'primary'}" href="${url}" download="${esc(f.name)}" target="_blank" rel="noopener">${img?'사진 저장':'파일 열기 · 저장'}</a>${img||pdf?`<button type="button" class="btn" id="fv-print">인쇄</button>`:''}</div>`;
+    const pb=$('#fv-print');
+    if(pb)pb.onclick=()=>{
+      const w=window.open(img?'':url,'_blank');if(!w){toast('팝업이 막혔어요. 주소창 오른쪽에서 팝업을 허용해 주세요');return}
+      if(img){w.document.write(`<html><head><title>${esc(f.name)}</title><style>@page{margin:10mm}body{margin:0}img{max-width:100%}</style></head><body><img src="${url}" onload="setTimeout(function(){print()},200)"></body></html>`);w.document.close()}
+    };
   }catch(e){const box=$('#fv');if(box)box.innerHTML=`<p class="note">${esc(errMsg(e))}</p>`}
 }
 
@@ -694,11 +700,25 @@ function dueChip(h){
 const photosOf=h=>(h.submitted||[]).filter(f=>!f.mark);
 const markOf=h=>(h.submitted||[]).find(f=>f.mark);
 function callName(n){n=String(n||'').trim();const g=n.length===3?n.slice(1):n;const c=g.charCodeAt(g.length-1);const jong=c>=0xAC00&&c<=0xD7A3&&(c-0xAC00)%28;return g+(jong?'아':'야')}
+const remindMsg=h=>{const s=stu(h.studentId);return h.remind||`${s?callName(s.name):'얘들아'}, 영어 숙제 '${h.title||''}' 아직 확인이 안 됐어! 했으면 영어 앱에서 '다 했어요'를 눌러 줘 😊\nhttps://ssaemnote.github.io/`};
 function smsBtn(h){
   const s=stu(h.studentId);if(!s)return '';
-  const msg=`${callName(s.name)}, 영어 숙제 '${h.title||''}' 아직 확인이 안 됐어! 했으면 영어 앱에서 '다 했어요'를 눌러 줘 😊\nhttps://ssaemnote.github.io/`;
-  const num=String(s.phone||'').replace(/[^0-9+]/g,'');
-  return `<a class="btn small" href="sms:${num}?body=${encodeURIComponent(msg)}">✉ 문자</a>`;
+  return `<button type="button" class="btn small" data-act="hw-remind" data-id="${h.id}">✉ 리마인드</button>`;
+}
+function remindForm(h){
+  const s=stu(h.studentId);
+  openModal('숙제 리마인드',`
+    <p class="note" style="margin:0">${esc(s?s.name:'')} · ${esc(h.title||'')}</p>
+    ${fld('rm-msg','보낼 문구',`<textarea id="rm-msg" name="msg" data-hid="${h.id}" style="min-height:140px">${esc(remindMsg(h))}</textarea>`,'글자를 고쳐서 쓸 수 있어요. 아래 \'저장\'을 누르면 이 숙제의 문구로 남아요.')}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn primary" data-act="rm-share">공유하기</button>
+      <button type="button" class="btn" data-act="rm-copy">복사</button>
+      <button type="button" class="btn" data-act="rm-sms" data-phone="${esc(String((s&&s.phone)||'').replace(/[^0-9+]/g,''))}">문자 앱으로</button>
+      <button type="button" class="btn ghost danger" data-act="rm-reset">기본 문구로 되돌리기</button>
+    </div>`,async fd=>{
+    const msg=(fd.get('msg')||'').trim();
+    await patch('homework',h.id,{remind:msg===remindMsg({...h,remind:''})?'':msg});toast('문구를 저장했어요');
+  });
 }
 function fileLinks(files,label){
   files=(files||[]).filter(f=>!f.mark);
@@ -716,7 +736,7 @@ function hwRow(h,showStudent){
       ${h.done&&h.feedback?`<div class="hw-desc"><b>코멘트</b> ${esc(h.feedback)}</div>`:''}
       ${fileLinks(h.files)}${fileLinks(h.submitted,'학생이 낸 사진')}
     </div>
-    ${showStudent?(!h.done&&!(h.submitted||[]).length&&h.due&&h.due<=todayStr()?`<div class="row-tools">${smsBtn(h)}</div>`:''):`<div class="row-tools">${!h.done&&!(h.submitted||[]).length&&h.due&&h.due<=todayStr()?smsBtn(h):''}<button class="btn ghost small" data-act="hw-edit" data-id="${h.id}">수정</button><button class="btn ghost small danger" data-act="del" data-col="homework" data-id="${h.id}">삭제</button></div>`}
+    ${showStudent?(!h.done&&!(h.submitted||[]).length&&h.due&&h.due<=todayStr()?`<div class="row-tools">${smsBtn(h)}</div>`:''):`<div class="row-tools">${!h.done?smsBtn(h):''}<button class="btn ghost small" data-act="hw-edit" data-id="${h.id}">수정</button><button class="btn ghost small danger" data-act="del" data-col="homework" data-id="${h.id}">삭제</button></div>`}
   </div>`;
 }
 function dots(c){
@@ -793,7 +813,7 @@ function viewStudent(){
     <div class="panel rows">${hws.length?hws.map(h=>hwRow(h,false)).join(''):'<div class="empty"><strong>낸 숙제가 없어요</strong><span>숙제를 내면서 학습지 PDF나 사진을 함께 붙일 수 있어요.</span></div>'}</div>`;
   }else if(S.tab==='words'){
     body=`<div class="block-head"><h2>단어장</h2><button class="btn primary small" data-act="words-new" data-id="${s.id}">단어장 만들기</button></div>
-    <div class="panel rows">${ws.length?ws.map(w=>`<div class="wset"><div style="min-width:0"><h3>${esc(w.title)} <span class="chip">${(w.items||[]).length}개</span></h3><div class="preview">${esc((w.items||[]).slice(0,6).map(i=>i.w).join(', '))}</div>${(()=>{const tt=S.tests.filter(t=>t.setId===w.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));return `<div class="wstat">${tt.length?`최근 <span class="num">${tt[0].score}/${tt[0].total}</span> · ${fmtD(tt[0].date)} · 지금까지 ${tt.length}번 봄`:'아직 시험을 보지 않았어요'}</div>`})()}</div><div class="actions"><button class="btn primary small" data-act="test-start" data-id="${w.id}">시험 보기</button><button class="btn small" data-act="live-new" data-id="${w.id}">실시간 시험</button><button class="btn ghost small" data-act="words-edit" data-id="${w.id}">수정</button><button class="btn ghost small danger" data-act="del" data-col="words" data-id="${w.id}">삭제</button></div></div>`).join(''):'<div class="empty"><strong>단어장을 만들어 보세요</strong><span>엑셀이나 메모에 있는 단어 목록을 그대로 붙여넣으면 돼요.</span></div>'}</div>
+    <div class="panel rows">${ws.length?ws.map(w=>`<div class="wset"><div style="min-width:0"><h3>${esc(w.title)} <span class="chip">${(w.items||[]).length?(w.items||[]).length+'개':'파일만'}</span></h3><div class="preview">${esc((w.items||[]).slice(0,6).map(i=>i.w).join(', '))}</div>${fileLinks(w.files)}${(()=>{const tt=S.tests.filter(t=>t.setId===w.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));return `<div class="wstat">${tt.length?`최근 <span class="num">${tt[0].score}/${tt[0].total}</span> · ${fmtD(tt[0].date)} · 지금까지 ${tt.length}번 봄`:'아직 시험을 보지 않았어요'}</div>`})()}</div><div class="actions">${(w.items||[]).length?`<button class="btn primary small" data-act="test-start" data-id="${w.id}">시험 보기</button><button class="btn small" data-act="live-new" data-id="${w.id}">실시간 시험</button>`:''}<button class="btn ghost small" data-act="words-edit" data-id="${w.id}">수정</button><button class="btn ghost small danger" data-act="del" data-col="words" data-id="${w.id}">삭제</button></div></div>`).join(''):'<div class="empty"><strong>단어장을 만들어 보세요</strong><span>엑셀이나 메모에 있는 단어 목록을 그대로 붙여넣으면 돼요.</span></div>'}</div>
     <div class="block-head" style="margin-top:12px"><h2>시험 결과</h2></div>
     ${scoreChart(ts)}
     <div class="panel tbl-wrap">${ts.length?`<table><thead><tr><th>날짜</th><th>단어장</th><th class="num">점수</th><th class="num">틀린</th><th></th></tr></thead><tbody>${ts.map(t=>{const p=t.total?Math.round(t.score/t.total*100):0;const w=waitOf(t);return `<tr><td class="num d" style="text-align:left">${fmtS(t.date)}</td><td>${esc(t.setTitle)}${testChip(t)}</td><td class="num"><span class="score-bar"><i style="width:${p}%"></i></span>${t.score}/${t.total}</td><td class="num">${(t.wrong||[]).length?`<button class="btn ${w?'primary':'ghost'} small" data-act="test-wrong" data-id="${t.id}">${w?`확인 요청 ${w}`:`${t.wrong.length}개 보기`}</button>`:'없음'}</td><td class="num"><button class="btn ghost small danger" data-act="del" data-col="tests" data-id="${t.id}">삭제</button></td></tr>`}).join('')}</tbody></table>`:'<div class="empty">아직 본 시험이 없어요</div>'}</div>`;
@@ -1079,6 +1099,7 @@ async function shrink(file,type){
 }
 function usageHtml(){
   let n=0,b=0;for(const h of S.homework)for(const f of [...(h.files||[]),...(h.submitted||[])]){if(f.mark)continue;n++;b+=f.size||0}
+  for(const w of S.words)for(const f of (w.files||[])){n++;b+=f.size||0}
   const used=b*1.37,max=1024**3,pct=Math.min(100,used/max*100);
   return `<div class="meter ${pct>=80?'hi':''}" role="img" aria-label="저장 공간 ${Math.round(pct)}% 사용"><i style="width:${pct.toFixed(1)}%"></i></div>
   <div class="note"><b class="num">${fmtSize(used)}</b> / 1GB 사용 (${pct<1?'1% 미만':Math.round(pct)+'%'}) · 파일 <span class="num">${n}</span>개</div>
@@ -1135,14 +1156,37 @@ function parseWords(text){
 function wordsForm(sid,ws){
   ws=ws||{studentId:sid,items:[]};
   const text=(ws.items||[]).map(i=>`${i.w} - ${i.m}`).join('\n');
+  const keepW=(ws.files||[]).map((f,i)=>`<label class="opt" style="padding:8px 12px"><input type="checkbox" name="keep" value="${i}" checked> ${esc(f.name)}</label>`).join('');
   openModal(ws.id?'단어장 수정':'단어장 만들기',`
     ${fld('f-wt','단어장 이름',`<input type="text" id="f-wt" name="title" value="${esc(ws.title||'')}" placeholder="Lesson 3 단어">`)}
     ${fld('f-wl','단어 목록',`<textarea id="f-wl" name="list" style="min-height:220px;font-family:var(--f-num);font-size:14px" placeholder="apple - 사과&#10;improve - 향상시키다, 개선하다&#10;environment - 환경">${esc(text)}</textarea>`,'한 줄에 하나씩 "단어 - 뜻" 형식으로 적어요. 엑셀에서 두 칸을 복사해 붙여넣어도 돼요. 뜻이 여러 개면 쉼표로 구분하면 그중 하나만 맞혀도 정답이에요.')}
-  `,async fd=>{
+    ${keepW?`<div class="field"><span class="lab">붙인 파일</span><div class="opt-group">${keepW}</div><span class="help">체크를 풀면 파일이 삭제돼요.</span></div>`:''}
+    ${fld('f-wf','파일 첨부',`<input type="file" id="f-wf" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.csv,.md">`,'단어장 사진, 단어 PDF, 시험지 등 · 파일당 10MB까지 · 올린 파일은 단어장 목록에서 눌러 열고, 저장·인쇄할 수 있어요 · 사진은 글씨가 읽히는 크기로 자동으로 줄여요')}
+  `,async (fd,f)=>{
     const title=(fd.get('title')||'').trim()||'단어장';const items=parseWords(fd.get('list'));
-    if(!items.length){toast('단어를 "단어 - 뜻" 형식으로 적어 주세요');return false}
-    if(ws.id)await patch('words',ws.id,{title,items});else await put('words',{studentId:ws.studentId,title,items,createdAt:Date.now()});
-    toast(`단어 ${items.length}개를 저장했어요`);
+    const keepIdx=new Set(fd.getAll('keep').map(Number));
+    const files=(ws.files||[]).filter((_,i)=>keepIdx.has(i));
+    const removed=(ws.files||[]).filter((_,i)=>!keepIdx.has(i));
+    const inp=f.querySelector('#f-wf');
+    const picked=inp&&inp.files.length;
+    if(!items.length&&!picked&&!files.length){toast('단어를 "단어 - 뜻" 형식으로 적거나, 파일을 올려 주세요');return false}
+    let before=0,after=0,shrunk=0,fails=0;
+    if(picked){
+      for(const file of inp.files){
+        const ext=(file.name.split('.').pop()||'').toLowerCase();const type=EXT[ext];
+        if(!type){toast(`${file.name}: PDF, 사진, 텍스트 파일만 올릴 수 있어요`);fails++;continue}
+        try{
+          const c=await shrink(file,type);
+          const r=await fileUp(c.blob,{type:c.type,name:c.name,studentId:ws.studentId,by:'teacher'});
+          files.push({id:r.id,name:c.name,type:c.type,size:r.size});
+          if(c.after<c.before){before+=c.before;after+=c.after;shrunk++}
+        }catch(e){toast(`${file.name}: ${errMsg(e)}`);fails++}
+      }
+    }
+    if(ws.id)await patch('words',ws.id,{title,items,files});else await put('words',{studentId:ws.studentId,title,items,files,createdAt:Date.now()});
+    for(const r of removed){try{await fileDel(r.id)}catch(e){}}
+    S.usage=null;
+    toast((items.length?`단어 ${items.length}개를 저장했어요`:'저장했어요')+(picked-fails>0?` · 파일 ${picked-fails}개 올렸어요`:'')+(shrunk?` · 사진 ${shrunk}장을 ${fmtSize(before)} → ${fmtSize(after)}로 줄였어요`:''));
   });
 }
 
@@ -1345,6 +1389,14 @@ document.addEventListener('click',async e=>{
     case 'lesson-edit':lessonForm(null,S.lessons.find(l=>l.id===id));break;
     case 'hw-new':homeworkForm(id);break;
     case 'hw-edit':homeworkForm(null,S.homework.find(h=>h.id===id));break;
+    case 'hw-remind':remindForm(S.homework.find(h=>h.id===id));break;
+    case 'rm-share':{const t=($('#rm-msg')||{}).value||'';
+      if(navigator.share){try{await navigator.share({text:t})}catch(e){if(e&&e.name!=='AbortError')toast('공유가 안 됐어요. 복사 버튼을 써 주세요')}}
+      else toast('이 화면에서는 공유 창이 안 열려요. 복사 버튼을 써 주세요');break}
+    case 'rm-copy':{const t=($('#rm-msg')||{}).value||'';
+      try{await navigator.clipboard.writeText(t);toast('복사했어요. 카톡에 붙여넣기 하세요')}catch(e){const a=$('#rm-msg');if(a){a.focus();a.select();toast('글자를 선택했어요. 길게 눌러 복사해 주세요')}}break}
+    case 'rm-sms':{const t=($('#rm-msg')||{}).value||'';location.href='sms:'+(b.dataset.phone||'')+'?body='+encodeURIComponent(t);break}
+    case 'rm-reset':{const a=$('#rm-msg');const h=a&&S.homework.find(x=>x.id===a.dataset.hid);if(h){a.value=remindMsg({...h,remind:''});toast('기본 문구로 바꿨어요. 저장을 눌러야 남아요')}break}
     case 'resv-new':if(!S.students.length){studentForm();break}resvForm(id||null,null,b.dataset.date);break;
     case 'resv-edit':{const e=findEv(id);if(e)resvForm(null,e);break}
     case 'resv-done':{const e=findEv(id);if(e)lessonForm(e.studentId,{date:e.date,studentId:e.studentId,progress:e.plan||''},e.auto?null:e.id);break}
@@ -1399,6 +1451,7 @@ async function removeItem(col,id){
     await del('students',id);closeModal();S.view='students';toast(`${s?s.name:'학생'} 기록을 모두 삭제했어요`);render();return;
   }
   if(col==='homework'){const h=S.homework.find(x=>x.id===id);for(const f of [...((h&&h.files)||[]),...((h&&h.submitted)||[])]){if(f.mark)continue;try{await fileDel(f.id)}catch(e){}}}
+  if(col==='words'){const w=S.words.find(x=>x.id===id);for(const f of ((w&&w.files)||[])){try{await fileDel(f.id)}catch(e){}}}
   if(col==='events'){const e=S.events.find(x=>x.id===id);try{await keepCancelled(e)}catch(err){}}
   await del(col,id);closeModal();toast(col==='events'?'일정을 지웠어요':'삭제했어요');
 }
