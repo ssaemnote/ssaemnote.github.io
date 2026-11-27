@@ -129,7 +129,10 @@ section.block{display:flex;flex-direction:column;gap:12px}
 .check:hover{border-color:var(--accent)}
 .check.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .check:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.hw-title{font-weight:600}
+.hw-title{font-weight:600;white-space:pre-line}
+.field.small-desc label{font-size:12px;font-weight:500;color:var(--muted)}
+.field.small-desc textarea{min-height:44px;font-size:13px;padding:6px 9px}
+.field textarea.hw-num{min-height:96px;line-height:1.6}
 .hw.done .hw-title{color:var(--muted)}
 .hw-sub{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
 .hw-desc{font-size:13.5px;margin-top:2px;white-space:pre-wrap}
@@ -700,7 +703,7 @@ function dueChip(h){
 const photosOf=h=>(h.submitted||[]).filter(f=>!f.mark);
 const markOf=h=>(h.submitted||[]).find(f=>f.mark);
 function callName(n){n=String(n||'').trim();const g=n.length===3?n.slice(1):n;const c=g.charCodeAt(g.length-1);const jong=c>=0xAC00&&c<=0xD7A3&&(c-0xAC00)%28;return g+(jong?'아':'야')}
-const remindMsg=h=>{const s=stu(h.studentId);return h.remind||`${s?callName(s.name):'얘들아'}, 영어 숙제 '${h.title||''}' 아직 확인이 안 됐어! 했으면 영어 앱에서 '다 했어요'를 눌러 줘 😊\nhttps://ssaemnote.github.io/`};
+const remindMsg=h=>{const s=stu(h.studentId);return h.remind||`${s?callName(s.name):'얘들아'}, 영어 숙제 '${String(h.title||'').replace(/\s*\n\s*/g,', ')}' 아직 확인이 안 됐어! 했으면 영어 앱에서 '다 했어요'를 눌러 줘 😊\nhttps://ssaemnote.github.io/`};
 function smsBtn(h){
   const s=stu(h.studentId);if(!s)return '';
   return `<button type="button" class="btn small" data-act="hw-remind" data-id="${h.id}">✉ 리마인드</button>`;
@@ -1110,13 +1113,13 @@ function homeworkForm(sid,h){
   h=h||{studentId:sid,due:addDays(todayStr(),7),files:[]};
   const keep=(h.files||[]).map((f,i)=>`<label class="opt" style="padding:8px 12px"><input type="checkbox" name="keep" value="${i}" checked> ${esc(f.name)}</label>`).join('');
   openModal(h.id?'숙제 수정':'숙제 내기',`
-    ${fld('f-title','숙제',`<input type="text" id="f-title" name="title" value="${esc(h.title||'')}" placeholder="워크북 p.20–23">`)}
+    ${fld('f-title','숙제',`<textarea id="f-title" name="title" class="hw-num" rows="3" placeholder="1. 워크북 p.20–23&#10;2. 단어 30개 암기">${esc(h.title||'')}</textarea>`,'칸을 누르면 1. 이 자동으로 나오고, 엔터를 누르면 다음 번호가 나와요.')}
     ${fld('f-due','마감일',`<input type="date" id="f-due" name="due" value="${esc(h.due||'')}">`)}
-    ${fld('f-desc','설명',`<textarea id="f-desc" name="desc" placeholder="풀 때 주의할 점, 채점 기준 등">${esc(h.desc||'')}</textarea>`)}
     ${keep?`<div class="field"><span class="lab">붙인 파일</span><div class="opt-group">${keep}</div><span class="help">체크를 풀면 파일이 삭제돼요.</span></div>`:''}
     ${fld('f-files','파일 첨부',`<input type="file" id="f-files" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.csv,.md">`,'학습지 PDF, 숙제 사진 등 · 파일당 10MB까지 · 사진은 글씨가 읽히는 크기로 자동으로 줄여서 저장해요')}
+    <div class="field small-desc"><label for="f-desc">설명 (선택)</label><textarea id="f-desc" name="desc" rows="2" placeholder="주의할 점 등">${esc(h.desc||'')}</textarea></div>
   `,async (fd,f)=>{
-    const title=(fd.get('title')||'').trim();if(!title){toast('숙제 내용을 적어 주세요');return false}
+    const title=(fd.get('title')||'').split(/\r?\n/).map(x=>x.trim()).filter(x=>x&&!/^\d+[.)]$/.test(x)).join('\n');if(!title){toast('숙제 내용을 적어 주세요');return false}
     const keepIdx=new Set(fd.getAll('keep').map(Number));
     const files=(h.files||[]).filter((_,i)=>keepIdx.has(i));
     const removed=(h.files||[]).filter((_,i)=>!keepIdx.has(i));
@@ -1485,7 +1488,17 @@ document.addEventListener('change',async e=>{
   if(e.target.id==='cal-filter'){S.calSid=e.target.value;render();return}
   if(e.target.id==='memo'){try{await patch('students',e.target.dataset.id,{memo:e.target.value});toast('메모를 저장했어요')}catch(err){toast(errMsg(err))}}
 });
+document.addEventListener('focusin',e=>{const t=e.target;if(t.classList&&t.classList.contains('hw-num')&&!t.value.trim()){t.value='1. ';t.setSelectionRange(3,3)}});
 document.addEventListener('keydown',e=>{
+  const t=e.target;
+  if(e.key==='Enter'&&t.classList&&t.classList.contains('hw-num')&&!e.isComposing&&!e.shiftKey){
+    e.preventDefault();
+    const v=t.value,pos=t.selectionStart,ls=v.lastIndexOf('\n',pos-1)+1,line=v.slice(ls,pos);
+    const m=line.match(/^(\d+)[.)]\s*(.*)$/);
+    if(m&&!m[2].trim()){t.value=v.slice(0,ls)+v.slice(pos);t.setSelectionRange(ls,ls);return}
+    const n=m?+m[1]+1:(v.match(/^\d+[.)]/gm)||[]).length+1;
+    const ins='\n'+n+'. ';t.value=v.slice(0,pos)+ins+v.slice(t.selectionEnd);const np=pos+ins.length;t.setSelectionRange(np,np);
+  }
   if(e.key==='Enter'&&e.target.id==='t-ans'&&!e.isComposing){e.preventDefault();testAnswer(e.target.value)}
   if(e.key==='Escape'){if(!$('#modal').hidden)closeModal()}
 });
